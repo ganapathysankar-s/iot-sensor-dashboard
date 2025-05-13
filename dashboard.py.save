@@ -1,0 +1,14 @@
+
+            with placeholder.container():
+                col1, col2 = st.columns(2)
+                col1.metric("🌡️ Temperature (°C)", f"{latest_temp}")
+                col2.metric("💧 Humidity (%)", f"{latest_hum}")
+
+                st.subheader("📈 Sensor Data Over Time")
+                st.line_chart(df.set_index("timestamp")[["temperature", "humidity"]])
+
+                if show_table:
+                    st.subheader("🗃️ Raw Data")
+                    st.dataframe(df[::-1], use_container_width=True)
+        else:
+      
