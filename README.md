@@ -1,184 +1,169 @@
-# 🛠 Serverless IoT Sensor Dashboard
+# 📡 Cloud based Serverless IOT data processing with Real-Time Visualization
 
-This project aims to develop a serverless IoT data processing and visualization system leveraging cloud computing. Using AWS Lambda/OpenFaaS, MQTT, and NoSQL databases, the system will process and store IoT data in real time. The processed data will be visualized using a web dashboard (Grafana/Streamlit) for real-time analytics. The idea is to demonstrate the scalability and cost-effectiveness of serverless architectures for IoT applications.
+![Architecture Diagram](architectue.png)
 
----
-
-## ✅ Tools Used:
-
-* Amazon Linux (via EC2 + PuTTY)
-* Python with Flask, Streamlit, paho-mqtt
-* MQTT Broker (Mosquitto) – for data transfer
-* AWS Lambda – for serverless processing
-* DynamoDB – to store sensor data
+This project builds a **fully serverless, event-driven IoT data pipeline** using AWS services. It simulates IoT sensor data, processes it using AWS Lambda and SNS, stores it in DynamoDB, and visualizes it via a live Streamlit dashboard hosted on an EC2 instance.
 
 ---
 
-## Components
-- **sensor_simulator.py**: Simulates IoT sensor data.
-- **lambda_function.py**: AWS Lambda function to store data into DynamoDB.
-- **app.py**: Flask API to retrieve stored data.
-- **dashboard.py**: Streamlit dashboard to visualize the data.
+## 📌 Project Highlights
+
+- Simulated sensor device publishes MQTT data to AWS IoT Core
+- Messages routed to SNS and processed by AWS Lambda
+- Processed data stored in DynamoDB
+- Real-time dashboard built with Streamlit displays the data
+- Fully automated provisioning script included
 
 ---
 
-## 🚀 Execution
+## 🧭 Manual Setup
 
-### 🔐 Step 1: Launch and Connect to Amazon Linux EC2 (with PuTTY)
+### 🔧 AWS Console
 
-#### 📦 A. Launch EC2 Instance
+#### 1. Launch EC2 Instance
+- Ubuntu recommended
+- Open ports **22** and **8501**
 
-1. Go to the [AWS EC2 Console](https://console.aws.amazon.com/ec2).
+#### 2. Create IAM User: `mqtt-sns-user`
+- Enable **programmatic access**
 
-2. Click "Launch Instance".
+#### 3. Register AWS IoT Thing
+- Generate and download:
+  - `AmazonRootCA1.pem`
+  - `device-certificate.pem.crt`
+  - `private.pem.key`
+- Place them in: `certs/` inside the repo
 
-3. Choose Amazon Linux 2 (Free tier eligible).
+#### 4. IAM Policies for `mqtt-sns-user`
+Attach these policies or equivalents:
+- `lambda:*`, `sns:*`, `iot:*`, `dynamodb:*`
+- `iam:PassRole` for `LambdaIoTRole`
+- Optional diagnostic access:
+  - `iam:Get*`, `iam:List*`, `iam:SimulatePrincipalPolicy`
 
-4. Select t2.micro instance type.
-
-5. Under Configure Security Group:
-
-   * Add rules to allow:
-
-     * SSH (22) – for PuTTY
-     * HTTP (80) – for web access
-     * Custom TCP 5000 – for Flask
-     * Custom TCP 8501 – for Streamlit
-
-6. Launch the instance and *download the .pem file* (key pair).
-
----
-
-#### 🔌 B. Connect to EC2 with PuTTY
-
-1. Open PuTTY.
-2. In Host Name, enter: ec2-XX-XX-XX-XX.compute.amazonaws.com
-3. Go to Connection > SSH > Auth and browse for your .ppk key (convert .pem using PuTTYgen).
-4. Click Open to connect.
-
----
-
-### ⚙ Step 2: Set Up Your Environment
-
-#### 🧰 A. Install Tools on EC2
-
-Run the following commands one by one after logging into your EC2:
-
-bash
-sudo yum update -y
-sudo yum install python3 -y
-sudo yum install git -y
-
-
-#### 🧪 B. Install Python Libraries
-
-bash
-pip3 install flask boto3 streamlit paho-mqtt requests
-
+Sample inline policy for PassRole:
+```json
+{
+  "Effect": "Allow",
+  "Action": "iam:PassRole",
+  "Resource": "arn:aws:iam::886436951574:role/LambdaIoTRole"
+}
+```
 
 ---
 
-### 🔄 Step 3: Install & Start MQTT Broker (Mosquitto)
+### 🧰 EC2 Instance Preparation
 
-bash
-sudo yum install mosquitto -y
-sudo systemctl start mosquitto
-sudo systemctl enable mosquitto
+#### Connect and Set Up
 
+```bash
+ssh -i <your-key.pem> ubuntu@<ec2-ip>
+sudo apt update
+sudo apt install awscli python3-pip -y
+aws configure  # Use mqtt-sns-user credentials
+```
 
-Check if it's running:
+#### Install Python Dependencies
 
-bash
-sudo systemctl status mosquitto
+```bash
+pip3 install boto3 streamlit pandas paho-mqtt streamlit-autorefresh
+```
+
+#### Clone Project Repository
+
+```bash
+git clone https://github.com/ganapathysankar-s/iot-sensor-dashboard.git
+cd iot-sensor-dashboard
+```
+
+---
+
+## ⚙️ Automated Provisioning
+
+Run the provided script:
+
+```bash
+bash setup.sh
+```
+
+The script automates the provisioning of AWS resources needed for a serverless IoT pipeline. Here's what it does:
+
+### 1. SNS Topic Setup
+- Creates a new SNS topic `iotSensorTopic` for message routing
+
+### 2. Lambda IAM Role Setup: 
+- Creates the role `LambdaIoTRole`
+- Adds trust policy for Lambda and IoT Core
+- Grants permissions to:
+  - Write to DynamoDB
+  - Publish to SNS
+
+### 3. Lambda Function Setup
+- Creates a new lambda `processIoTData` and attaches `LambdaIoTRole` to it
+- Zips and deploys `lambda_function.py`
+
+### 4. Lambda Trigger Permission
+- Adds `sns.amazonaws.com` as allowed principal to invoke the Lambda
+
+### 5. IoT Topic Rule Setup
+- Creates IoT Rule `IoTToSNSRule`
+- Forwards messages from topic `iot/topic` to SNS using `LambdaIoTRole`
+
+### 6. DynamoDB Setup
+- Creates the table  `IoTData` with timestamp as partition key
+- Billing mode: `PAY_PER_REQUEST`
 
 
 ---
 
-### 🧪 Step 4: Run the Sensor Simulator
+## 🚀 Run the System
 
-1. Copy your sensor_simulator.py to EC2 using SCP or manually.
-2. Edit the file if needed (with nano):
+### Start the Sensor Simulator
 
-bash
-nano sensor_simulator.py
+```bash
+python3 sensor_simulator.py > sensor.log 2>&1 &
+```
 
-
-3. Run the script:
-
-bash
-nohup python3 sensor_simulator.py &
-
-
-💡 This will keep sending fake sensor data every 5 seconds using MQTT.
+This sends data every 5 seconds over MQTT to AWS IoT Core.
 
 ---
 
-### ☁ Step 5: Set Up AWS Lambda & DynamoDB
+### Launch the Dashboard
 
-#### A. Create DynamoDB Table
+```bash
+streamlit run dashboard.py --server.port 8501 --server.address 0.0.0.0
+```
 
-1. Go to AWS Console > DynamoDB
-2. Create Table:
-
-   * Name: IoTData
-   * Partition Key: timestamp (String)
-
-#### B. Create SNS Topic
-
-1. Go to AWS SNS Console
-2. Create a topic: Name it IoTTopic.
-
-#### C. Create Lambda Function
-
-1. Go to AWS Lambda Console
-2. Create function from scratch: IoTStoreFunction
-3. Choose Python 3.x runtime.
-4. Add lambda_function.py code.
-5. Give the Lambda permissions to write to DynamoDB.
-6. Add SNS trigger using IoTTopic.
+Then open your browser at:
+```
+http://<ec2-public-ip>:8501
+```
 
 ---
 
-### 🌐 Step 6: Run the Flask API Server
+## Expected Output
 
-1. Copy app.py to EC2.
-2. Run the API:
-
-bash
-nohup python3 app.py &
-
-
-3. Access from browser:
-
-   
-   http://<your-ec2-public-ip>:5000/data
-   
-
-📌 Make sure port 5000 is open in EC2's security group.
+- IoT Data routed securely through MQTT to DynamoDB
+- Sensor logs stored in `sensor.log`
+- CloudWatch logs from Lambda invocations
+- Live charts for temperature & humidity in dashboard
 
 ---
 
-### 📊 Step 7: Run Streamlit Dashboard
+## 📂 Project Structure
 
-1. Copy dashboard.py to EC2.
-2. Edit the API URL in the file:
-
-python
-API_URL = "http://<your-ec2-public-ip>:5000/data"
-
-
-3. Start dashboard:
-
-bash
-streamlit run dashboard.py
-
-
-4. Open in browser:
-
-
-http://<your-ec2-public-ip>:8501
-
-
-📌 Port 8501 must be allowed in security group.
+```
+iot-sensor-dashboard/
+├── certs/ # TLS certs for IoT Core
+├── sensor_simulator.py # MQTT simulator
+├── dashboard.py # Streamlit dashboard
+├── aws_iot_lambda_dynamodb_setup.sh # Full provisioning script
+└── README.md # This file
+```
 
 ---
+
+## 🧠 Author
+
+**Ganapathy Sankar S**  
+GitHub: [@ganapathysankar-s](https://github.com/ganapathysankar-s)
